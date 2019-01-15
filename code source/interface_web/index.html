@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+
+<script type="text/javascript" src="https://static.robotwebtools.org/EaselJS/current/easeljs.min.js"></script>
+<script type="text/javascript" src="https://static.robotwebtools.org/EventEmitter2/current/eventemitter2.min.js"></script>
+<script type="text/javascript" src="https://static.robotwebtools.org/roslibjs/current/roslib.min.js"></script>
+<script type="text/javascript" src="https://static.robotwebtools.org/ros2djs/current/ros2d.min.js"></script>
+<script type="text/javascript" src="jquery.js"></script>
+<script type="text/javascript" src="bootstrap.js"></script>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+<script>
+
+var ros = new ROSLIB.Ros();
+function init() {
+      // Connexion à Rosbrige Server
+      ros.connect('ws://192.168.100.13:9090');
+      // On souscrit au topic Robot Pose pour obtenir les coordonnées du robot
+      var poseTopic = new ROSLIB.Topic({
+        ros         : ros,
+        name        : '/robot_pose',
+        messageType : 'geometry_msgs/Pose'
+      });
+      // lorsqu'un message est publié sur le topic robot_pose on récupère 
+      //les infos
+      /*poseTopic.subscribe(function(message) {
+        var now = new Date();
+        var position = 'x: ' + message.position.x
+          + ', y: ' + message.position.y
+          + ', z: 0.0';
+        var orientation = 'x: ' + message.orientation.x
+          + ', y: ' + message.orientation.y
+          + ', z: ' + message.orientation.z
+          + ', w: ' + message.orientation.w;
+        $('#poses > tbody > tr:first').after('<tr>'
+          + '<td>' + now.toLocaleTimeString() + '</td>'
+          + '<td>' + position + '</td>'
+          + '<td>' + orientation + '</td>');
+      });*/
+      //on souscrit au topic /mobile_base/commands/velocity pour avoir 
+      var velTopic = new ROSLIB.Topic({
+        ros         : ros,
+        name        : '/mobile_base/commands/velocity',
+        messageType : 'geometry_msgs/Twist'
+      });
+      velTopic.subscribe(function(message) {
+        var now = new Date();
+        var speedlinear = 'x: ' + message.linear.x
+          + ', y: ' + message.linear.y
+          + ', z: 0.0';
+        var speedangular = 'x: ' + message.angular.x
+          + ', y: ' + message.angular.y
+          + ', z: ' + message.angular.z
+          + ', w: ' + message.angular.w;
+        $('#speed > tbody > tr:first').after('<tr>'
+          + '<td>' + now.toLocaleTimeString() + '</td>'
+          + '<td>' + speedlinear + '</td>'
+          + '<td>' + speedlinear + '</td>');
+      });
+
+      // Affichage de la carte avec ROS2Djs
+      var viewer2D = new ROS2D.Viewer({
+        divID : 'twod-map',
+        width : 600,
+        height : 500
+      });
+      var gridClient = new ROS2D.OccupancyGridClient({
+        ros : ros,
+        rootObject : viewer2D.scene
+      });
+      gridClient.on('change', function() {
+        viewer2D.scaleToDimensions(gridClient.currentGrid.width, gridClient.currentGrid.height);
+        viewer2D.shift(gridClient.currentGrid.pose.position.x, gridClient.currentGrid.pose.position.y);
+        displayPoseMarker();
+      });
+      // Afficher les évènements
+      //On souscrit au topic chatter qui renvoit 1 s'il y a eu mouvement
+	var listener_presence = new ROSLIB.Topic({
+		ros : ros,
+		name : 'chatter',
+		messageType : 'std_msgs/String'
+	});
+	var nb_event=0;
+        //fonction de callback lorsqu'un message est publié sur le topic chatter
+	listener_presence.subscribe(function(message) {
+	//On récupère la date associé au dernier évènement reçut
+		var d = new Date();
+		var month = d.getMonth()+1;
+		var day = d.getDate();
+		var output = d.getHours() + 'h'+
+		d.getMinutes() +' - ' +
+		+ day + '/' + month + '/' +
+		d.getFullYear();
+		//Si la valeur du message reçu est "1", le capteur de présence a détécté quelque chose
+		if (message.data=='1'){
+			$('#event').html("</td><td>Mouvement!</td><td>"+output+"</td>");
+			console.log(message)
+		}
+	});
+      //Afficher la position sur la carte
+      function displayPoseMarker() {
+        // Création d'un marqueur pour le robot
+        var robotMarker = new ROS2D.NavigationArrow({
+          size : 12,
+          strokeSize : 1,
+          fillColor : createjs.Graphics.getRGB(255, 128, 0, 0.66),
+          pulse : true
+        });
+        robotMarker.visible = false;
+        // Ajout du marqueur à la map
+        gridClient.rootObject.addChild(robotMarker);
+        var initScaleSet = false;
+        // On souscrit au topic robot_pose
+        var poseListener = new ROSLIB.Topic({
+          ros : ros,
+          name : '/robot_pose',
+          messageType : 'geometry_msgs/Pose',
+          throttle_rate : 100
+        });
+        poseListener.subscribe(function(pose) {
+	  console.log(pose);
+          // Orientation du marqueur en fonction de la position du robot
+          robotMarker.x = pose.position.x;
+          robotMarker.y = -pose.position.y;
+          if (!initScaleSet) {
+            robotMarker.scaleX = 1.0 / viewer2D.scene.scaleX;
+            robotMarker.scaleY = 1.0 / viewer2D.scene.scaleY;
+            initScaleSet = true;
+          }
+          robotMarker.rotation = viewer2D.scene.rosQuaternionToGlobalTheta(pose.orientation);
+          robotMarker.visible = true;
+        });
+	
+      }
+    }
+function pubMsg(){
+        var stopTopic = new ROSLIB.Topic({
+              ros         : ros,
+              name        : '/arret',
+              messageType : 'std_msgs/String'
+        });
+	var message= new ROSLIB.Message( { data : '1' } ); 
+        console.log("stop robobo");
+        stopTopic.publish(message);
+	var d = new Date();
+                var month = d.getMonth()+1;
+                var day = d.getDate();
+                var output = d.getHours() + 'h'+
+                d.getMinutes() +' - ' +
+                + day + '/' + month + '/' +
+                d.getFullYear();
+                $('#event').html("</td><td>Arrêt!</td><td>"+output+"</td>");
+
+}
+  </script>
+</head>
+<style>
+.push{
+    height: 75px;
+}
+</style>
+<body onload="init()">
+<nav class="navbar navbar-inverse navbar-fixed-top">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <a class="navbar-brand" href="#">RDC04</a>
+    </div>
+  </div>
+</nav>
+<div class="push">
+</div>
+<div class="container">
+  <div class="row">
+    <div class="col-md-8">
+      <div id="twod-map">
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="table-responsive">
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Evènements</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr id="event">
+              <td>Aucun mouvement détecté</td>
+              <td>1</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <br>
+      <a class="btn btn btn-info" target="_blank" onclick="pubMsg()">Arrêter</a>
+      <a class="btn btn btn-info" target="_blank" href="http://192.168.100.13:8080/stream?topic=/camera/rgb/image_raw">Caméra</a>
+      <a class="btn btn btn-info" target="_blank" name="lien1" value="Photo" onclick="self.location.href='photo.html'" style="color:white; font-weight:blue"onclick>Photo</a> 
+      <!-- Pose Table -->
+    <div class="row" id="pose-data">
+      <div class="span12">
+        <h3>Vitesse</h3>
+        <table id="speed" class="table table-condensed">
+          <thead>
+          <tr>
+            <th>Date</th>
+            <th>Vitesse linéaire (m/s)</th>
+            <th>Vitesse angulaire (rad/s)</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr></tr>
+          </tbody>
+        </table>
+      </div>
+	</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
+
